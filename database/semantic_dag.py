@@ -37,15 +37,15 @@ class Neo4jManager(IGraphStore):
                 self.user = candidate_user
                 self.password = candidate_password
                 self.is_connected = True
-                print(f"[Neo4j] ✅ Connected using {label} endpoint: {candidate_uri}")
+                print(f"[Neo4j] [+] Connected using {label} endpoint: {candidate_uri}")
                 self._initialize_user()
                 return
             except Exception as e:
-                print(f"[Neo4j] ⚠️ Could not connect using {label} endpoint ({candidate_uri}): {e}")
+                print(f"[Neo4j] [!] Could not connect using {label} endpoint ({candidate_uri}): {e}")
 
         self.driver = None
         self.is_connected = False
-        print("[Neo4j] ⚠️ Offline mode enabled. Graph features will return empty results until Neo4j is running.")
+        print("[Neo4j] [*] Offline mode enabled. Graph features will return empty results until Neo4j is running.")
 
     def close(self):
         if self.driver:
@@ -166,27 +166,36 @@ class Neo4jManager(IGraphStore):
                 session.run(cypher_query, source=source, target=target, loc=locator)
 
     def mark_concept_as_learned(self, concept_id: str, user_id: str = "guest_01"):
+        if not self._is_available():
+            return
         query = """
         MATCH (u:User {id: $user_id})
         MATCH (c:Concept {id: $concept_id})
         MERGE (u)-[r:HAS_LEARNED]->(c)
         SET r.timestamp = timestamp()
         """
-        with self.driver.session() as session:
-            session.run(query, user_id=user_id, concept_id=concept_id)
+        try:
+            with self.driver.session() as session:
+                session.run(query, user_id=user_id, concept_id=concept_id)
+        except Exception as e:
+            print(f"[Neo4j] [!] mark_concept_as_learned Error: {e}")
 
     def reset_user_data(self, user_id: str = "guest_01"):
-
+        if not self._is_available():
+            return
         query_turns = "MATCH (u:User {id: $user_id})-[r:HAS_TURN]->(t:ChatTurn) DETACH DELETE t"
         query_learned = "MATCH (u:User {id: $user_id})-[r:HAS_LEARNED]->(c:Concept) DELETE r"
-        
-        with self.driver.session() as session:
-            session.run(query_turns, user_id=user_id)
-            session.run(query_learned, user_id=user_id)
-            print(f"[Neo4j] ✅ Successfully reset data for user: {user_id}")
+        try:
+            with self.driver.session() as session:
+                session.run(query_turns, user_id=user_id)
+                session.run(query_learned, user_id=user_id)
+                print(f"[Neo4j] [+] Successfully reset data for user: {user_id}")
+        except Exception as e:
+            print(f"[Neo4j] [!] reset_user_data Error: {e}")
 
-    def get_unlearned_prerequisites(self, target_concept: str, max_depth: int = 2, user_id: str = "guest_01") -> List[
-        str]:
+    def get_unlearned_prerequisites(self, target_concept: str, max_depth: int = 2, user_id: str = "guest_01") -> List[str]:
+        if not self._is_available():
+            return []
         query = f"""
         MATCH (target:Concept {{id: $target_concept}})
         MATCH (prereq:Concept)-[:PREREQUISITE_OF*1..{max_depth}]->(target)
@@ -195,23 +204,34 @@ class Neo4jManager(IGraphStore):
         WHERE u IS NULL
         RETURN DISTINCT prereq.id AS missing_concept
         """
-        with self.driver.session() as session:
-            result = session.run(query, target_concept=target_concept, user_id=user_id)
-            return [record["missing_concept"] for record in result]
+        try:
+            with self.driver.session() as session:
+                result = session.run(query, target_concept=target_concept, user_id=user_id)
+                return [record["missing_concept"] for record in result]
+        except Exception as e:
+            print(f"[Neo4j] [!] get_unlearned_prerequisites Error: {e}")
+            return []
 
-    def get_learned_prerequisites(self, target_concept: str, max_depth: int = 3, user_id: str = "guest_01") -> List[
-        str]:
+    def get_learned_prerequisites(self, target_concept: str, max_depth: int = 3, user_id: str = "guest_01") -> List[str]:
+        if not self._is_available():
+            return []
         query = f"""
         MATCH (target:Concept {{id: $target_concept}})
         MATCH (prereq:Concept)-[:PREREQUISITE_OF*1..{max_depth}]->(target)
         MATCH (u:User {{id: $user_id}})-[:HAS_LEARNED]->(prereq)
         RETURN DISTINCT prereq.id AS learned_concept
         """
-        with self.driver.session() as session:
-            result = session.run(query, target_concept=target_concept, user_id=user_id)
-            return [record["learned_concept"] for record in result]
+        try:
+            with self.driver.session() as session:
+                result = session.run(query, target_concept=target_concept, user_id=user_id)
+                return [record["learned_concept"] for record in result]
+        except Exception as e:
+            print(f"[Neo4j] [!] get_learned_prerequisites Error: {e}")
+            return []
 
     def get_concept_subgraph(self, target_concept: str, max_depth: int = 1) -> Dict[str, List[str]]:
+        if not self._is_available():
+            return {"prerequisites": [], "leads_to": [], "related_concepts": []}
         query = f"""
         MATCH (target:Concept {{id: $target_concept}})
         OPTIONAL MATCH (prereq:Concept)-[:PREREQUISITE_OF*1..{max_depth}]->(target)
@@ -222,18 +242,22 @@ class Neo4jManager(IGraphStore):
             collect(DISTINCT leads_to.id) AS leads_to,
             collect(DISTINCT related.id) AS related_concepts
         """
-        with self.driver.session() as session:
-            result = session.run(query, target_concept=target_concept).single()
-            prereqs = [p for p in result["prerequisites"] if p is not None] if result and result[
-                "prerequisites"] else []
-            leads = [l for l in result["leads_to"] if l is not None] if result and result["leads_to"] else []
-            related = [r for r in result["related_concepts"] if r is not None] if result and result[
-                "related_concepts"] else []
-            return {
-                "prerequisites": prereqs,
-                "leads_to": leads,
-                "related_concepts": related
-            }
+        try:
+            with self.driver.session() as session:
+                result = session.run(query, target_concept=target_concept).single()
+                prereqs = [p for p in result["prerequisites"] if p is not None] if result and result[
+                    "prerequisites"] else []
+                leads = [l for l in result["leads_to"] if l is not None] if result and result["leads_to"] else []
+                related = [r for r in result["related_concepts"] if r is not None] if result and result[
+                    "related_concepts"] else []
+                return {
+                    "prerequisites": prereqs,
+                    "leads_to": leads,
+                    "related_concepts": related
+                }
+        except Exception as e:
+            print(f"[Neo4j] [!] get_concept_subgraph Error: {e}")
+            return {"prerequisites": [], "leads_to": [], "related_concepts": []}
 
     def get_graph_context(self, node_names: List[str], search_mode: str = "search") -> List[Dict[str, str]]:
         """

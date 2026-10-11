@@ -1,0 +1,1 @@
+"""SoftGNN CI/CD integrations."""

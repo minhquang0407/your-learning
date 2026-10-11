@@ -408,3 +408,20 @@ class QdrantVectorStore(IVectorStore):
                 print(f"[*] Deleted records for {source_name} from {coll}")
             except Exception as e:
                 print(f"[!] Error deleting {source_name} from {coll}: {e}")
+
+    def list_sources(self) -> List[str]:
+        """Return sorted distinct document source names from section payloads."""
+        try:
+            records, _ = self.client.scroll(
+                collection_name=self.parent_coll,
+                limit=1000,
+                with_payload=True,
+            )
+            return sorted({
+                str(record.payload.get("source", "")).strip()
+                for record in records
+                if record.payload and str(record.payload.get("source", "")).strip()
+            })
+        except Exception as exc:
+            print(f"[!] Qdrant list_sources Error: {exc}")
+            return []

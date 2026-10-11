@@ -5,8 +5,15 @@ from database.semantic_dag import Neo4jManager
 from orchestrator.llm_factory import LLMFactory
 from orchestrator.llm_service import LLMService
 from runtime.engine import SupportAgent, RuntimeEngine
-from runtime.queue import QueueOrchestrator
 from runtime.agent_runtime import MultiAgentRuntime
+from database.document_processor import MathAwareDocumentProcessor
+from application.assessment_service import AssessmentService
+from application.facade import LearningApplication
+from application.ingestion_service import IngestionService
+from application.learning_service import LearningService
+from application.library_service import LibraryService
+from application.qa_service import QAService
+from application.briefing_service import BriefingService
 
 
 class Container(containers.DeclarativeContainer):
@@ -83,11 +90,6 @@ class Container(containers.DeclarativeContainer):
         llm=qa_llm
     )
 
-    queue_orchestrator = providers.Singleton(
-        QueueOrchestrator,
-        llm_service=llm_service
-    )
-
     multi_agent_runtime = providers.Singleton(
         MultiAgentRuntime,
         llm_service=llm_service,
@@ -101,10 +103,38 @@ class Container(containers.DeclarativeContainer):
     # Main Engine
     runtime_engine = providers.Singleton(
         RuntimeEngine,
-        orchestrator=queue_orchestrator,
+        multi_agent_runtime=multi_agent_runtime,
         vector_db=vector_db,
         graph_db=graph_db,
         support_agent=support_agent,
-        multi_agent_runtime=multi_agent_runtime,
-        use_multi_agent_runtime=config.use_multi_agent_runtime,
+        llm_service=llm_service,
+    )
+
+    document_processor = providers.Singleton(MathAwareDocumentProcessor)
+
+    ingestion_service = providers.Singleton(
+        IngestionService,
+        vector_store=vector_db,
+        graph_store=graph_db,
+        llm_service=llm_service,
+        document_processor=document_processor,
+    )
+    learning_service = providers.Singleton(LearningService, runtime_engine=runtime_engine)
+    qa_service = providers.Singleton(QAService, runtime_engine=runtime_engine)
+    assessment_service = providers.Singleton(AssessmentService, runtime_engine=runtime_engine)
+    briefing_service = providers.Singleton(BriefingService, runtime_engine=runtime_engine)
+    library_service = providers.Singleton(
+        LibraryService,
+        vector_store=vector_db,
+        graph_store=graph_db,
+    )
+
+    learning_application = providers.Singleton(
+        LearningApplication,
+        ingestion=ingestion_service,
+        learning=learning_service,
+        qa=qa_service,
+        assessment=assessment_service,
+        library=library_service,
+        briefing=briefing_service,
     )

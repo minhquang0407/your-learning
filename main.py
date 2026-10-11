@@ -95,7 +95,7 @@ with st.sidebar:
             # 3. Check Learning/Chat LLM
             try:
                 test_prompt = "Say 'OK'"
-                res = engine.orchestrator.llm_service.chat_llm.invoke(test_prompt)
+                res = engine.llm_service.chat_llm.invoke(test_prompt)
                 st.success(f"✅ Chat LLM: Connected (Response: {res.content})")
             except Exception as e:
                 st.error(f"❌ Chat LLM: {e}")
@@ -105,7 +105,7 @@ with st.sidebar:
                 st.info("Testing Ingestion LLM (JSON Mode)...")
                 test_json_prompt = "Output a JSON with a field 'status' set to 'ready'"
                 # Ingestion LLM is stored in llm_service.llm
-                res_json = engine.orchestrator.llm_service.llm.invoke(test_json_prompt)
+                res_json = engine.llm_service.llm.invoke(test_json_prompt)
                 st.success(f"✅ Ingestion LLM: Connected (Response: {res_json.content})")
             except Exception as e:
                 st.warning(f"⚠️ Ingestion LLM (JSON Mode) failed: {e}. I will try to auto-fix this if you proceed.")
@@ -165,7 +165,7 @@ with st.sidebar:
                         run_ingestion_pipeline(
                             content, file_name, 
                             engine.vector_db, 
-                            engine.orchestrator.llm_service,
+                            engine.llm_service,
                             engine.graph_db
                         )
                         

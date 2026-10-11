@@ -141,19 +141,53 @@ class SupportAgent:
             return {"action": "answer", "response": raw_text}
 
 class RuntimeEngine:
-    def __init__(self, orchestrator, vector_db, graph_db, support_agent, multi_agent_runtime=None, use_multi_agent_runtime: bool = False):
+    def __init__(
+        self,
+        multi_agent_runtime=None,
+        vector_db=None,
+        graph_db=None,
+        support_agent=None,
+        llm_service=None,
+    ):
         """
         - Reason: The Central Dispatcher (Air Traffic Controller) of the system.
         - Function: Routes actions to LEARNING or QA, manages memory, and handles DB retrievals.
         - Usage: Instantiated once at the application entry point (e.g., app.py).
-        - Parameters: Runtime orchestrators, database stores, and support agents.
+        - Parameters: MultiAgentRuntime, database stores, support agent, and llm_service.
         """
-        self.orchestrator = orchestrator
+        self.multi_agent_runtime = multi_agent_runtime
         self.vector_db = vector_db
         self.graph_db = graph_db
         self.support_agent = support_agent
-        self.multi_agent_runtime = multi_agent_runtime
-        self.use_multi_agent_runtime = use_multi_agent_runtime
+        self.llm_service = llm_service
+
+    @property
+    def orchestrator(self):
+        class _OrchestratorCompat:
+            def __init__(self, llm_service, multi_agent_runtime=None):
+                self.llm_service = llm_service
+                self.multi_agent_runtime = multi_agent_runtime
+
+            def execute_teaching_step(
+                self,
+                step_data: dict,
+                macro_context: str = "",
+                user_id: str = "guest_01",
+                target_file: str = "",
+                target_section: str = "",
+            ):
+                if self.multi_agent_runtime is not None:
+                    return self.multi_agent_runtime.execute_learning(
+                        user_id=user_id,
+                        target_file=target_file,
+                        target_section=target_section or (step_data or {}).get("step_title", ""),
+                        step_data=step_data or {},
+                        macro_context=macro_context or "",
+                        anchor_nodes=(step_data or {}).get("main_entities", []),
+                    )
+                return []
+
+        return _OrchestratorCompat(self.llm_service, self.multi_agent_runtime)
 
     def save_learning_turn(self, user_id: str, target_file: str, target_section: str, step_data: dict, full_lecture_text: str):
         """
@@ -185,78 +219,31 @@ class RuntimeEngine:
             target_section=target_section
         )
 
-    def _stream_learning_action(self, target_file: str, target_section: str, step_data: dict, user_id: str):
-        yield {"type": "status", "message": "Extracting Macro-context from the lesson..."}
-        raw_context = self.vector_db.get_section_exact(target_file, target_section)
-
-        macro_context_str = ""
-        if raw_context and isinstance(raw_context, list):
-            if isinstance(raw_context[0], dict): macro_context_str = raw_context[0].get("page_content", "")
-            else: macro_context_str = str(raw_context[0])
-        elif isinstance(raw_context, str):
-            macro_context_str = raw_context
-
-        yield {"type": "status", "message": "Scanning User Profile Graph (Learned/Unlearned) from Neo4j..."}
-        main_entities = step_data.get("main_entities", [])
-        unlearned, learned = [], []
-        if main_entities:
-            for ent in main_entities:
-                unlearned.extend(self.graph_db.get_unlearned_prerequisites(ent))
-                learned.extend(self.graph_db.get_learned_prerequisites(ent))
-            unlearned, learned = list(set(unlearned)), list(set(learned))
-        
-        graph_context_str = f"Unlearned: {', '.join(unlearned) if unlearned else 'None'}\nLearned: {', '.join(learned) if learned else 'None'}"
-
-        # [FIXED]: Accumulate chunks to build the full text before saving
-        full_lecture_text = ""
-        for event in self.orchestrator.execute_teaching_step(step_data, macro_context_str, graph_context_str):
-            if event["type"] == "chunk":
-                full_lecture_text += event["content"]
-            elif event["type"] == "agent_end":
-                # Add formatting separators to match UI display
-                full_lecture_text += f"\n\n---\n\n"
-            
-            # Yield the event forward to the UI
-            yield event
-
-        # [FIXED]: Call the dedicated save logic with the fully accumulated text
-        yield {"type": "status", "message": "Saving lecture to Neo4j and Qdrant..."}
-        self.save_learning_turn(user_id, target_file, target_section, step_data, full_lecture_text)
-
-        yield {"type": "status", "message": "Marking learning progress in User Profile..."}
-        if main_entities:
-            for ent in main_entities:
-                self.graph_db.mark_concept_as_learned(ent, user_id=user_id)
-
     def process_action(self, action_mode: str, query: str = "", target_file: str = "", target_section: str = "", step_data: dict = None, user_id: str = "guest_01"):
         """
         - Reason: Unified entry point for all UI interactions.
         - Function: Executes the distinct logic flows for LEARNING, LOCAL_QA, and GLOBAL_QA.
         """
         if action_mode == "LEARNING":
-            if self.use_multi_agent_runtime and self.multi_agent_runtime is not None:
-                print("\n[ENGINE] Dispatching to MultiAgentRuntime (Streaming)...")
-                raw_context = self.vector_db.get_section_exact(target_file, target_section)
-                macro_context_str = ""
-                if raw_context and isinstance(raw_context, list):
-                    if isinstance(raw_context[0], dict):
-                        macro_context_str = raw_context[0].get("page_content", "")
-                    else:
-                        macro_context_str = str(raw_context[0])
-                elif isinstance(raw_context, str):
-                    macro_context_str = raw_context
+            print("\n[ENGINE] Dispatching to MultiAgentRuntime (Streaming)...")
+            raw_context = self.vector_db.get_section_exact(target_file, target_section)
+            macro_context_str = ""
+            if raw_context and isinstance(raw_context, list):
+                if isinstance(raw_context[0], dict):
+                    macro_context_str = raw_context[0].get("page_content", "")
+                else:
+                    macro_context_str = str(raw_context[0])
+            elif isinstance(raw_context, str):
+                macro_context_str = raw_context
 
-                return self.multi_agent_runtime.execute_learning(
-                    user_id=user_id,
-                    target_file=target_file,
-                    target_section=target_section,
-                    step_data=step_data or {},
-                    macro_context=macro_context_str,
-                    anchor_nodes=(step_data or {}).get("main_entities", [])
-                )
-
-            print("\n[ENGINE] Dispatching to LEARNING Queue (Streaming)...")
-            return self._stream_learning_action(target_file, target_section, step_data, user_id)
+            return self.multi_agent_runtime.execute_learning(
+                user_id=user_id,
+                target_file=target_file,
+                target_section=target_section,
+                step_data=step_data or {},
+                macro_context=macro_context_str,
+                anchor_nodes=(step_data or {}).get("main_entities", []),
+            )
 
         elif action_mode in ["LOCAL_QA", "GLOBAL_QA"]:
             print(f"\n[ENGINE] Executing {action_mode} for query: {query}")
@@ -271,7 +258,7 @@ class RuntimeEngine:
             micro_context = ""
             search_results = self.vector_db.search_candidates_and_fetch_parent(
                 query=query,
-                llm_service=self.orchestrator.llm_service,
+                llm_service=self.llm_service,
                 target_file=target_file
             )
 
@@ -352,71 +339,38 @@ class RuntimeEngine:
             
         full_text = section_data[0]["page_content"]
         try:
-            if self.use_multi_agent_runtime and self.multi_agent_runtime is not None:
-                step_data = {
-                    "step_title": target_section,
-                    "content_focus": full_text[:2000],
-                    "main_entities": section_data[0].get("metadata", {}).get("anchor_nodes", []),
-                }
-                quiz_payload = self.multi_agent_runtime.generate_assessment(
-                    user_id="guest_01",
-                    target_file=target_file,
-                    target_section=target_section,
-                    step_data=step_data,
-                    macro_context=full_text,
-                    question_count=5,
-                )
-                if quiz_payload.get("error"):
-                    return [], quiz_payload["error"]
-                return quiz_payload.get("questions", []), None
-
-            quiz, err = self.orchestrator.llm_service.generate_quiz(full_text)
-            if err:
-                return [], err
-            return quiz, None
+            step_data = {
+                "step_title": target_section,
+                "content_focus": full_text[:2000],
+                "main_entities": section_data[0].get("metadata", {}).get("anchor_nodes", []),
+            }
+            quiz_payload = self.multi_agent_runtime.generate_assessment(
+                user_id="guest_01",
+                target_file=target_file,
+                target_section=target_section,
+                step_data=step_data,
+                macro_context=full_text,
+                question_count=5,
+            )
+            if quiz_payload.get("error"):
+                return [], quiz_payload["error"]
+            return quiz_payload.get("questions", []), None
         except Exception as e:
             return [], f"Engine Error: {str(e)}"
 
     def grade_lesson_quiz(self, quiz: List[Dict], answers: Dict[str, int], user_id: str = "guest_01") -> Dict[str, Any]:
         """Grade a generated quiz and return feedback plus remediation guidance."""
-        if self.use_multi_agent_runtime and self.multi_agent_runtime is not None:
-            quiz_payload = {
-                "quiz_id": str(uuid.uuid4()),
-                "title": "Lesson Assessment",
-                "questions": quiz,
-                "target_concepts": sorted({q.get("concept_id") for q in quiz if q.get("concept_id")}),
-            }
-            return self.multi_agent_runtime.grade_assessment(
-                quiz=quiz_payload,
-                answers=answers,
-                user_id=user_id,
-            )
-
-        total = len(quiz)
-        correct = 0
-        weak_concepts = []
-        for idx, question in enumerate(quiz):
-            submitted = answers.get(str(idx), answers.get(idx))
-            if submitted == question.get("answer_idx"):
-                correct += 1
-            else:
-                weak_concepts.append(question.get("concept_id") or f"Question {idx + 1}")
-        score = correct / total if total else 0.0
-        return {
-            "grading_result": {
-                "score": score,
-                "correct_count": correct,
-                "total_count": total,
-                "weak_concepts": sorted(set(weak_concepts)),
-                "feedback": f"Score: {correct}/{total}.",
-                "remediation_required": score < 0.75,
-            },
-            "remediation_plan": {
-                "weak_concepts": sorted(set(weak_concepts)),
-                "recommended_agents": ["concept", "example"] if weak_concepts else [],
-                "instruction": "Review weak concepts: " + ", ".join(sorted(set(weak_concepts))) if weak_concepts else "No remediation required.",
-            },
+        quiz_payload = {
+            "quiz_id": str(uuid.uuid4()),
+            "title": "Lesson Assessment",
+            "questions": quiz,
+            "target_concepts": sorted({q.get("concept_id") for q in quiz if q.get("concept_id")}),
         }
+        return self.multi_agent_runtime.grade_assessment(
+            quiz=quiz_payload,
+            answers=answers,
+            user_id=user_id,
+        )
 
     def get_source_briefing(self, target_file: str) -> tuple[Dict, Optional[str]]:
         """
@@ -430,7 +384,7 @@ class RuntimeEngine:
         section_records.sort(key=lambda x: x["metadata"].get("seq_id", 0))
         full_content = "\n\n".join([r["page_content"] for r in section_records])
         try:
-            briefing, err = self.orchestrator.llm_service.generate_source_briefing(target_file, full_content)
+            briefing, err = self.llm_service.generate_source_briefing(target_file, full_content)
             if err:
                 return {}, err
             return briefing, None

@@ -112,9 +112,13 @@ def test_learning_roadmap_quality():
         for step in roadmap:
             step_explanation = ""
             # The orchestrator is stateless regarding users, but we ensure state is reset
-            for output in engine.orchestrator.execute_teaching_step(
+            for output in engine.multi_agent_runtime.execute_learning(
+                user_id=run_user_id,
+                target_file=TEXTBOOK_FILE,
+                target_section=step.get("step_title", TARGET_SECTION),
                 step_data=step,
-                macro_context=parent_data[0]["page_content"] if parent_data else ""
+                macro_context=parent_data[0]["page_content"] if parent_data else "",
+                anchor_nodes=step.get("main_entities", []),
             ):
                 if output["type"] == "chunk":
                     step_explanation += output["content"]

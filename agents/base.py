@@ -32,13 +32,18 @@ class BaseAgent(ABC):
         error: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> AgentResult:
+        meta = dict(metadata or {})
+        if error and "error" not in meta:
+            meta["error"] = error
+        if success is False and "success" not in meta:
+            meta["success"] = False
         message = AgentMessage(
             agent_name=self.name,
             role=self.role,
             content=normalize_latex_markdown(clean_think_tags(content)),
             confidence=confidence,
             needs_revision=needs_revision,
-            metadata=metadata or {},
+            metadata=meta,
         )
         return AgentResult(
             task_id=task.task_id,

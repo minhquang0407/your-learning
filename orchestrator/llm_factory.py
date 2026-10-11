@@ -14,11 +14,11 @@ class LLMFactory:
         google_key = kwargs.get("google_api_key")
         
         if provider.lower() == "groq" and not groq_key:
-            st.error("⚠️ GROQ_API_KEY is missing! Check your environment/secrets.")
+            raise ValueError("⚠️ GROQ_API_KEY is missing! Please configure it in your environment or .env file.")
         elif provider.lower() == "openai" and not openai_key:
-             st.error("⚠️ OPENAI_API_KEY is missing!")
+            raise ValueError("⚠️ OPENAI_API_KEY is missing! Please configure it in your environment or .env file.")
         elif provider.lower() == "gemini" and not google_key:
-             st.error("⚠️ GOOGLE_API_KEY is missing!")
+            raise ValueError("⚠️ GOOGLE_API_KEY is missing! Please configure it in your environment or .env file.")
              
         # Clean up kwargs to avoid passing internal config keys to LangChain models
         internal_keys = ["openai_api_key", "google_api_key", "groq_api_key"]

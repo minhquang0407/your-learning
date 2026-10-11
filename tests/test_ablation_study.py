@@ -280,7 +280,7 @@ def engine():
         with open(TEXTBOOK_PATH, "r", encoding="utf-8") as f:
             content = f.read()
         run_ingestion_pipeline(content, TEXTBOOK_FILE, _engine.vector_db,
-                               _engine.orchestrator.llm_service, _engine.graph_db)
+                               _engine.llm_service, _engine.graph_db)
         print("[SETUP] Ingestion complete!")
 
     return _engine
@@ -306,7 +306,7 @@ def run_qa_with_config(
     anchor_nodes, macro_context = [], ""
     if use_hyde:
         results = engine.vector_db.search_candidates_and_fetch_parent(
-            query=query, llm_service=engine.orchestrator.llm_service, target_file=target_file
+            query=query, llm_service=engine.llm_service, target_file=target_file
         )
         if results:
             macro_context = results[0].get("page_content", "")

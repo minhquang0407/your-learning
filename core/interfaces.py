@@ -56,6 +56,11 @@ class IVectorStore(ABC):
     def delete_source(self, source_name: str) -> None:
         pass
 
+    @abstractmethod
+    def list_sources(self) -> List[str]:
+        """Return distinct ingested source names."""
+        pass
+
 
 class IGraphStore(ABC):
     """Interface for Graph Database."""

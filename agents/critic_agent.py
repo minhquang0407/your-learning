@@ -22,6 +22,21 @@ class CriticAgent(BaseAgent):
                 revised_instruction="Regenerate the response with concrete instructional content.",
                 confidence=1.0,
             )
+        elif (
+            ("failed" in latest.content.lower() and ("agent" in latest.content.lower() or "persistence" in latest.content.lower()))
+            or latest.metadata.get("error")
+            or latest.metadata.get("success") is False
+            or latest.needs_revision
+        ):
+            error_desc = latest.metadata.get("error") or latest.content
+            report = CriticReport(
+                status="fail",
+                reviewed_agent=latest.agent_name,
+                issues=[f"Agent execution failed: {error_desc}"],
+                send_back_to=latest.agent_name,
+                revised_instruction=f"Re-run task due to failure: {error_desc}",
+                confidence=1.0,
+            )
         else:
             report = CriticReport(
                 status="pass",

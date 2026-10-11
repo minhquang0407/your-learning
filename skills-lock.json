@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "m-yagni": {
+      "source": "minhquang0407/m-yagni",
+      "sourceType": "github",
+      "skillPath": "m-yagni/SKILL.md",
+      "computedHash": "123dd6243e3e5808ecf4748e50e12b73f5ad189c8b4ad3bac584df8b1ef12781"
+    },
+    "proven": {
+      "source": "minhquang0407/proven",
+      "sourceType": "github",
+      "skillPath": "skills/proven/SKILL.md",
+      "computedHash": "9498842995d493c66407d70e70af5bb577ceea661b726546f789f4a7e19c4b32"
+    },
+    "softgnn-advisor": {
+      "source": "minhquang0407/proven",
+      "sourceType": "github",
+      "skillPath": "skills/softgnn-advisor/SKILL.md",
+      "computedHash": "22505149f8a15f619e9a0df52a2d350e203ee04e90c717dd1924193a9ef7b634"
+    }
+  }
+}

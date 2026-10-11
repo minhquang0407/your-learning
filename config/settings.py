@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     neo4j_password: str = Field(default="ExpertMentor2026")
 
     # Multi-Agent Runtime Configuration
-    use_multi_agent_runtime: bool = Field(default=False)
     critic_enabled: bool = Field(default=False)
     max_revision_loops: int = Field(default=1)
     stream_agent_outputs: bool = Field(default=True)

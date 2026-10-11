@@ -13,30 +13,12 @@ class TeachingStep(BaseModel):
     )
 
 
-class QueueState(BaseModel):
-    current_step_id: str
-    macro_context: str = Field(description="The full text of the current section to provide global understanding", default="")
-    graph_context: str = "" # [NEW] Holds learned/unlearned prerequisites
-    global_summary: str = ""
-    concept_scratchpad: List[str] = []
-    math_scratchpad: List[str] = []
-    formula_scratchpad: List[str] = []
-    algorithm_scratchpad: List[str] = []
-    dynamic_scratchpad: List[str] = []
-
 class QAResponse(BaseModel):
     """
     - Reason: To enforce a structured JSON output from the SupportAgent.
     - Function: Validates the LLM's answer.
     """
     answer: str = Field(description="The synthesized academic answer to the user's query.")
-
-
-class AgentClaim(BaseModel):
-    """A factual or pedagogical claim produced by an agent."""
-    text: str = Field(description="The claim text")
-    source: Optional[str] = Field(default=None, description="Optional source context or evidence")
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Claim-level confidence score")
 
 
 class AgentTask(BaseModel):
@@ -55,7 +37,7 @@ class AgentMessage(BaseModel):
     agent_name: str
     role: str
     content: str
-    claims: List[AgentClaim] = Field(default_factory=list)
+    claims: List[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     needs_revision: bool = False
     next_suggested_agents: List[str] = Field(default_factory=list)

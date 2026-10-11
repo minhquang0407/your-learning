@@ -230,6 +230,14 @@ class MultiAgentRuntime:
             blackboard.agent_messages.append(persist_result.message)
             yield agent_result_to_event(persist_result)
 
+        if self.graph_db is not None and anchor_nodes:
+            yield {"type": "status", "message": "Marking learning progress in User Profile..."}
+            for node in anchor_nodes:
+                try:
+                    self.graph_db.mark_concept_as_learned(node, user_id=user_id)
+                except Exception as exc:
+                    print(f"[!] Failed to mark concept '{node}' as learned: {exc}")
+
         self.tracer.record("runtime_status", message="Multi-Agent learning step completed.")
         self.tracer.finish_trace(blackboard=blackboard, success=True)
         yield {"type": "trace", "trace": self.tracer.as_dict()}
