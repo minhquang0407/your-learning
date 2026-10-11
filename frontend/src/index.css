@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: #090A0F;
+    color: #F1F5F9;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Linear double-bezel studio enclosure */
+.studio-enclosure {
+  background: #0F111A;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+}
+
+.studio-card {
+  background: #161926;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.studio-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: #1B1F30;
+}
+
+/* Audio wave animation */
+@keyframes waveHeight {
+  0% { height: 15%; }
+  50% { height: 95%; }
+  100% { height: 25%; }
+}
+
+.animate-wave-bar {
+  animation: waveHeight 1.1s ease-in-out infinite alternate;
+}
