@@ -146,7 +146,7 @@ class LLMService(ILLMService):
             ### TASK 3: KNOWLEDGE GRAPH ONTOLOGY EXTRACTION
             - Extract a structured knowledge graph containing `nodes` and `edges`.
             - Nodes: Extract key concepts. Assign them a logical `type` and a very short (1 sentence) `description` based on the text.
-            - Edges: Map the relationships between these nodes. Allowed relations: PREREQUISITE_OF, RELATES_TO, PART_OF, DESCRIBES.
+            - Edges: Map the relationships between these nodes. Allowed relations: PREREQUISITE_OF, RELATES_TO, PART_OF, DESCRIBES, VERSUS, EXEMPLIFIES, APPLIED_IN.
             
             [CRITICAL LINKING RULE]: 
             You are provided with a list of concepts already extracted from previous sections. 

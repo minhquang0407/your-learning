@@ -13,6 +13,7 @@ class IngestDocumentRequest:
     content: str
     file_name: str
     user_id: str = "local_user"
+    file_bytes: bytes | None = None
 
 
 @dataclass(frozen=True)

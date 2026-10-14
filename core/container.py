@@ -7,6 +7,10 @@ from orchestrator.llm_service import LLMService
 from runtime.engine import SupportAgent, RuntimeEngine
 from runtime.agent_runtime import MultiAgentRuntime
 from database.document_processor import MathAwareDocumentProcessor
+from database.document_router import DocumentRouter
+from database.gemini_extractor import GeminiStructureExtractor
+from database.page_validator import PageBoundsValidator
+from database.entity_resolver import AnchorEntityResolver
 from application.assessment_service import AssessmentService
 from application.facade import LearningApplication
 from application.ingestion_service import IngestionService
@@ -110,7 +114,28 @@ class Container(containers.DeclarativeContainer):
         llm_service=llm_service,
     )
 
-    document_processor = providers.Singleton(MathAwareDocumentProcessor)
+    page_bounds_validator = providers.Singleton(PageBoundsValidator)
+
+    gemini_extractor = providers.Singleton(
+        GeminiStructureExtractor,
+        api_key=config.google_api_key,
+    )
+
+    fallback_document_processor = providers.Singleton(MathAwareDocumentProcessor)
+
+    document_processor = providers.Singleton(
+        DocumentRouter,
+        gemini_extractor=gemini_extractor,
+        page_validator=page_bounds_validator,
+        fallback_processor=fallback_document_processor,
+    )
+
+    entity_resolver = providers.Singleton(
+        AnchorEntityResolver,
+        vector_store=vector_db,
+        graph_store=graph_db,
+        llm_service=llm_service,
+    )
 
     ingestion_service = providers.Singleton(
         IngestionService,
@@ -118,6 +143,7 @@ class Container(containers.DeclarativeContainer):
         graph_store=graph_db,
         llm_service=llm_service,
         document_processor=document_processor,
+        entity_resolver=entity_resolver,
     )
     learning_service = providers.Singleton(LearningService, runtime_engine=runtime_engine)
     qa_service = providers.Singleton(QAService, runtime_engine=runtime_engine)

@@ -18,6 +18,7 @@ from application.contracts import (
     DocumentSummary,
     GradeQuizRequest,
     GradingView,
+    IngestDocumentRequest,
     KnowledgeGraphView,
     LearningProgress,
     LessonRequest,
@@ -55,6 +56,9 @@ class LearningApplication:
 
     def ask(self, request: QuestionRequest) -> AnswerResult:
         return self.qa.ask(request)
+
+    def ingest(self, request: IngestDocumentRequest) -> Iterable[ApplicationEvent]:
+        return self.ingestion.ingest(request)
 
     def stream_lesson(self, request: LessonRequest) -> Iterable[ApplicationEvent]:
         return self.learning.stream_lesson(request)

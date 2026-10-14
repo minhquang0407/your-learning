@@ -108,3 +108,7 @@ class IGraphStore(ABC):
     @abstractmethod
     def delete_source(self, source_name: str) -> None:
         pass
+
+    def get_all_concepts(self) -> List[Dict[str, Any]]:
+        """Retrieve all concept nodes with canonical_name, aliases, and metadata."""
+        return []

@@ -1,15 +1,20 @@
 import hashlib
-from database.document_processor import MathAwareDocumentProcessor
-
 import streamlit as st
+from database.document_router import DocumentRouter
+from database.entity_resolver import AnchorEntityResolver
 
-def run_ingestion_pipeline(markdown_content: str, file_name: str, db, llm, dag):
-    processor = MathAwareDocumentProcessor()
+def run_ingestion_pipeline(markdown_content: str, file_name: str, db, llm, dag, file_bytes: bytes = None):
+    router = DocumentRouter()
+    resolver = AnchorEntityResolver(vector_store=db, graph_store=dag, llm_service=llm)
     
     # 1. Initialize status framework
     with st.status("Processing learning data...", expanded=True) as status:
-        status.update(label="Analyzing document structure (Markdown Headers)...")
-        final_document, toc_tree = processor.process_markdown(markdown_content)
+        status.update(label="Analyzing document structure...")
+        final_document, toc_tree = router.process_document(
+            content=markdown_content,
+            filename=file_name,
+            file_bytes=file_bytes,
+        )
 
         status.update(label=f"Saving Table of Contents for: {file_name}")
         dag.save_table_of_contents(file_name, toc_tree)
@@ -27,7 +32,7 @@ def run_ingestion_pipeline(markdown_content: str, file_name: str, db, llm, dag):
                 st.write(f"--- **Processing Section {i+1}/{len(final_document)}: {sec_name}** ---")
                 
                 try:
-                    full_section_text = section.get("page_content","")
+                    full_section_text = section.get("page_content", "")
                     parent_id = hashlib.md5(f"{file_name}__{chapter_name}__{sec_name}".encode('utf-8')).hexdigest()
 
                     llm_data = llm.extract_section_curriculum_and_dag(full_section_text, existing_nodes=global_nodes_list)
@@ -39,15 +44,26 @@ def run_ingestion_pipeline(markdown_content: str, file_name: str, db, llm, dag):
                     edges = kg_data.get("edges", [])
                     nodes = kg_data.get("nodes", [])
 
+                    # Anchor Entity Resolution & Disambiguation
+                    resolved_nodes, resolved_edges, name_map = resolver.resolve_section_entities(
+                        nodes=nodes,
+                        edges=edges,
+                        source_locator=f"{file_name}::{chapter_name}::{sec_name}"
+                    )
+                    nodes = resolved_nodes
+                    edges = resolved_edges
+                    main_entities = [name_map.get(m, m) for m in main_entities if m]
+
                     for node in nodes:
-                        node_name = node.get("name", "").strip()
+                        node_name = node.get("canonical_name") or node.get("name", "").strip()
                         if node_name and node_name not in global_nodes_list:
                             global_nodes_list.append(node_name)
 
                     # BUILD NEO4J DAG
                     section_anchors = set()
                     for node in nodes:
-                        if "name" in node: section_anchors.add(node["name"])
+                        n_id = node.get("canonical_name") or node.get("name")
+                        if n_id: section_anchors.add(n_id)
                     for e in edges:
                         if "source" in e: section_anchors.add(e["source"])
                         if "target" in e: section_anchors.add(e["target"])

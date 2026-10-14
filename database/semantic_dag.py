@@ -115,26 +115,48 @@ class Neo4jManager(IGraphStore):
         """
         - Function: Saves Graph (including Nodes with types and Edges with relations). Creates absolute positioning locators.
         """
-        allowed_relations = {"PREREQUISITE_OF", "RELATES_TO", "PART_OF", "DESCRIBES", "VERSUS"}
+        allowed_relations = {
+            "PREREQUISITE_OF", "RELATES_TO", "PART_OF", "DESCRIBES", "VERSUS",
+            "EXEMPLIFIES", "APPLIED_IN"
+        }
 
         locator = f"{file_name}::{chapter_name}::{section_title}"
 
         with self.driver.session() as session:
-            # 1. Lưu các Node và Type
+            # 1. Save Nodes, Types, Canonical Names, and Aliases
             for node in nodes:
-                node_name = str(node.get("name", "")).strip()
+                canonical_name = str(node.get("canonical_name") or node.get("name") or "").strip()
+                node_name = str(node.get("name") or canonical_name).strip()
                 node_type = str(node.get("type", "concept")).strip()
                 node_desc = str(node.get("description", "")).strip()
-                if not node_name: continue
-                
+
+                if not canonical_name:
+                    continue
+
+                raw_aliases = node.get("aliases", [])
+                if isinstance(raw_aliases, list):
+                    aliases = [str(a).strip() for a in raw_aliases if str(a).strip()]
+                elif raw_aliases:
+                    aliases = [str(raw_aliases).strip()]
+                else:
+                    aliases = []
+
+                if node_name and node_name != canonical_name and node_name not in aliases:
+                    aliases.append(node_name)
+
+                # Deduplicate and remove canonical_name from aliases
+                clean_aliases = [a for a in dict.fromkeys(aliases) if a.lower() != canonical_name.lower()]
+
                 session.run("""
                 MERGE (n:Concept {id: $id})
                 SET n.type = $type
                 SET n.description = $desc
+                SET n.canonical_name = $canonical_name
+                SET n.aliases = [a IN coalesce(n.aliases, []) WHERE NOT a IN $aliases] + $aliases
                 SET n.source_locators = CASE WHEN $loc IN coalesce(n.source_locators, []) THEN n.source_locators ELSE coalesce(n.source_locators, []) + $loc END
-                """, id=node_name, type=node_type, desc=node_desc, loc=locator)
+                """, id=canonical_name, type=node_type, desc=node_desc, canonical_name=canonical_name, aliases=clean_aliases, loc=locator)
 
-            # 2. Đánh dấu Main Entities
+            # 2. Mark Main Entities
             for main_ent in main_entities:
                 if not main_ent: continue
                 session.run("""
@@ -143,7 +165,7 @@ class Neo4jManager(IGraphStore):
                 SET c.source_locators = CASE WHEN $loc IN coalesce(c.source_locators, []) THEN c.source_locators ELSE coalesce(c.source_locators, []) + $loc END
                 """, id=main_ent.strip(), loc=locator)
 
-            # 3. Xây dựng các cạnh (Edges)
+            # 3. Build edges
             for e in edges:
                 source = str(e.get("source", "")).strip()
                 target = str(e.get("target", "")).strip()
@@ -318,7 +340,7 @@ class Neo4jManager(IGraphStore):
         query = """
         MATCH (c:Concept)
         WHERE $loc IN c.source_locators
-        OPTIONAL MATCH (c)-[r:PREREQUISITE_OF|RELATES_TO|PART_OF|DESCRIBES|VERSUS]->(other:Concept)
+        OPTIONAL MATCH (c)-[r:PREREQUISITE_OF|RELATES_TO|PART_OF|DESCRIBES|VERSUS|EXEMPLIFIES|APPLIED_IN]->(other:Concept)
         WHERE $loc IN other.source_locators
         OPTIONAL MATCH (u:User {id: $user_id})-[h:HAS_LEARNED]->(c)
         RETURN 
@@ -326,6 +348,8 @@ class Neo4jManager(IGraphStore):
             c.description as description, 
             c.type as type, 
             c.is_main as is_main,
+            c.canonical_name as canonical_name,
+            c.aliases as aliases,
             h IS NOT NULL as learned,
             collect({target: other.id, type: type(r)}) as relations
         """
@@ -343,7 +367,9 @@ class Neo4jManager(IGraphStore):
                         "title": record["description"],
                         "type": record["type"],
                         "learned": record["learned"],
-                        "is_main": record["is_main"] or False
+                        "is_main": record["is_main"] or False,
+                        "canonical_name": record.get("canonical_name") or record["id"],
+                        "aliases": record.get("aliases") or [],
                     })
                     
                     for rel in record["relations"]:
@@ -351,7 +377,7 @@ class Neo4jManager(IGraphStore):
                             edge_key = tuple(sorted([record["id"], rel["target"]])) + (rel["type"],)
                             if edge_key not in seen_edges:
                                 edges.append({
-                                    "source": record["id"],
+                                     "source": record["id"],
                                     "target": rel["target"],
                                     "label": rel["type"]
                                 })
@@ -370,7 +396,7 @@ class Neo4jManager(IGraphStore):
         query = """
         MATCH (c:Concept)
         WHERE any(loc IN c.source_locators WHERE loc STARTS WITH $prefix)
-        OPTIONAL MATCH (c)-[r:PREREQUISITE_OF|RELATES_TO|PART_OF|DESCRIBES|VERSUS]->(other:Concept)
+        OPTIONAL MATCH (c)-[r:PREREQUISITE_OF|RELATES_TO|PART_OF|DESCRIBES|VERSUS|EXEMPLIFIES|APPLIED_IN]->(other:Concept)
         WHERE any(loc IN other.source_locators WHERE loc STARTS WITH $prefix)
         OPTIONAL MATCH (u:User {id: $user_id})-[h:HAS_LEARNED]->(c)
         RETURN 
@@ -378,6 +404,8 @@ class Neo4jManager(IGraphStore):
             c.description as description, 
             c.type as type, 
             c.is_main as is_main,
+            c.canonical_name as canonical_name,
+            c.aliases as aliases,
             h IS NOT NULL as learned,
             collect({target: other.id, type: type(r)}) as relations
         """
@@ -395,7 +423,9 @@ class Neo4jManager(IGraphStore):
                         "title": record["description"],
                         "type": record["type"],
                         "learned": record["learned"],
-                        "is_main": record["is_main"] or False
+                        "is_main": record["is_main"] or False,
+                        "canonical_name": record.get("canonical_name") or record["id"],
+                        "aliases": record.get("aliases") or [],
                     })
                     
                     for rel in record["relations"]:
@@ -422,7 +452,7 @@ class Neo4jManager(IGraphStore):
         query = """
         MATCH (c:Concept)
         WHERE any(loc IN c.source_locators WHERE loc STARTS WITH $prefix)
-        OPTIONAL MATCH (c)-[r:PREREQUISITE_OF|RELATES_TO|PART_OF|DESCRIBES|VERSUS]->(other:Concept)
+        OPTIONAL MATCH (c)-[r:PREREQUISITE_OF|RELATES_TO|PART_OF|DESCRIBES|VERSUS|EXEMPLIFIES|APPLIED_IN]->(other:Concept)
         WHERE any(loc IN other.source_locators WHERE loc STARTS WITH $prefix)
         OPTIONAL MATCH (u:User {id: $user_id})-[h:HAS_LEARNED]->(c)
         RETURN 
@@ -430,6 +460,8 @@ class Neo4jManager(IGraphStore):
             c.description as description, 
             c.type as type, 
             c.is_main as is_main,
+            c.canonical_name as canonical_name,
+            c.aliases as aliases,
             h IS NOT NULL as learned,
             collect({target: other.id, type: type(r)}) as relations
         """
@@ -447,7 +479,9 @@ class Neo4jManager(IGraphStore):
                         "title": record["description"],
                         "type": record["type"],
                         "learned": record["learned"],
-                        "is_main": record["is_main"] or False
+                        "is_main": record["is_main"] or False,
+                        "canonical_name": record.get("canonical_name") or record["id"],
+                        "aliases": record.get("aliases") or [],
                     })
                     
                     for rel in record["relations"]:
@@ -531,9 +565,9 @@ class Neo4jManager(IGraphStore):
 
     def save_chat_turn(self, user_id: str, turn_id: str, query: str, raw_answer: str, summary: str, concept_ids: list = None, target_file: str = "", target_section: str = ""):
         """
-        - Lí do tại sao dùng: Lưu trữ Episodic Memory vào Neo4j làm Nguồn Sự Thật Duy Nhất (SSOT).
-        - Chức năng: Lưu lượt chat, liên kết với User, NHIỀU Concept và gắn metadata Section.
-        - Cách dùng: Gọi sau khi LLM xử lý xong một lượt học/hỏi đáp.
+        - Reason: Persists Episodic Memory in Neo4j as the Single Source of Truth (SSOT).
+        - Function: Saves chat turn, connects with User, MULTIPLE Concepts, and attaches Section metadata.
+        - Usage: Called after LLM completes a learning or QA turn.
         """
         cypher = """
         MERGE (u:User {id: $user_id})
@@ -605,3 +639,35 @@ class Neo4jManager(IGraphStore):
             DETACH DELETE n
             """)
             print(f"[*] Cleaned up Neo4j for source: {source_name}")
+
+    def get_all_concepts(self) -> List[Dict[str, Any]]:
+        """Retrieve all concept nodes with canonical_name, aliases, and metadata."""
+        if not self._is_available():
+            return []
+        query = """
+        MATCH (c:Concept)
+        RETURN 
+            c.id AS id,
+            coalesce(c.canonical_name, c.id) AS canonical_name,
+            coalesce(c.aliases, []) AS aliases,
+            coalesce(c.description, '') AS description,
+            coalesce(c.type, 'concept') AS type,
+            coalesce(c.source_locators, []) AS source_locators
+        """
+        try:
+            with self.driver.session() as session:
+                result = session.run(query)
+                return [
+                    {
+                        "name": record["canonical_name"],
+                        "canonical_name": record["canonical_name"],
+                        "aliases": record["aliases"] or [],
+                        "description": record["description"] or "",
+                        "type": record["type"] or "concept",
+                        "source_locators": record["source_locators"] or [],
+                    }
+                    for record in result
+                ]
+        except Exception as e:
+            print(f"[Neo4j] [!] get_all_concepts Error: {e}")
+            return []
